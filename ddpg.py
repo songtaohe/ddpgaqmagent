@@ -1,7 +1,58 @@
 import tensorflow as tf 
 import tflearn
 
-class ddpg():
+from collections import deque
+import random
+import numpy as np
+
+class ReplayBuffer(object):
+
+    def __init__(self, buffer_size):
+        self.buffer_size = buffer_size
+        self.count = 0
+        self.buffer = deque()
+
+    def add(self, s, a, r, t, s2):
+        experience = (s, a, r, t, s2)
+        if self.count < self.buffer_size: 
+            self.buffer.append(experience)
+            self.count += 1
+        else:
+            self.buffer.popleft()
+            self.buffer.append(experience)
+
+    def size(self):
+        return self.count
+
+    def sample_batch(self, batch_size):
+        '''     
+        batch_size specifies the number of experiences to add 
+        to the batch. If the replay buffer has less than batch_size
+        elements, simply return all of the elements within the buffer.
+        Generally, you'll want to wait until the buffer has at least 
+        batch_size elements before beginning to sample from it.
+        '''
+        batch = []
+
+        if self.count < batch_size:
+            batch = random.sample(self.buffer, self.count)
+        else:
+            batch = random.sample(self.buffer, batch_size)
+
+        s_batch = np.array([_[0] for _ in batch])
+        a_batch = np.array([_[1] for _ in batch])
+        r_batch = np.array([_[2] for _ in batch])
+        t_batch = np.array([_[3] for _ in batch])
+        s2_batch = np.array([_[4] for _ in batch])
+
+        return s_batch, a_batch, r_batch, t_batch, s2_batch
+
+    def clear(self):
+        self.buffer.clear()
+        self.count = 0
+
+
+class ddpgModel():
 	def __init__(self, sess, state_dim = 3, action_dim = 1, batch_size = 16, tau = 0.001):
 
 		self.sess = sess
@@ -11,8 +62,8 @@ class ddpg():
 		self.batch_size = batch_size
 		self.learning_rate = 0.001
 
-		self.inputstate = tf.placefolder(tf.float32, shape=(None, state_dim))
-		self.inputaction = tf.placefolder(tf.float32, shape(None, 1))
+		self.inputstate = tf.placeholder(tf.float32, shape=(None, state_dim))
+		self.inputaction = tf.placeholder(tf.float32, shape=(None, 1))
 
 
 		self.actor_output = self.create_actor_network(self.inputstate)
@@ -31,8 +82,8 @@ class ddpg():
 
 
 		self.update_target_network_params = \
-		[target_network_params[i].assign(tf.mul(network_params[i], self.tau) + \
-			tf.mul(target_network_params[i], 1. - self.tau))
+		[target_network_params[i].assign(tf.multiply(network_params[i], self.tau) + \
+			tf.multiply(target_network_params[i], 1. - self.tau))
 			for i in range(len(target_network_params))]
 
 
@@ -47,7 +98,7 @@ class ddpg():
 		self.actor_gradients = list(map(lambda x: tf.div(x, self.batch_size), self.unnormalized_actor_gradients))
 
 		# Optimization Op
-		self.optimize_actor = tf.train.AdamOptimizer(self.learning_rate).\
+		self.optimize_actor = tf.train.AdamOptimizer(self.learning_rate/10.0).\
 			apply_gradients(zip(self.actor_gradients, actor_network_params))
 
 
@@ -78,12 +129,13 @@ class ddpg():
 
 			net = tflearn.fully_connected(net, nn, weights_init=w_init)
 			
-			if i < len(nns):
+			if i < len(nns)-1:
 				net = tflearn.layers.normalization.batch_normalization(net)
 				net = tflearn.activations.relu(net)
 			else:
-				net = tflearn.activations.sigmod(net)
-
+				#net = tflearn.activations.sigmoid(net)
+				pass 
+				
 		return net 
 	
 
@@ -99,7 +151,7 @@ class ddpg():
 
 			net = tflearn.fully_connected(net, nn, weights_init=w_init)
 			
-			if i < len(nns):
+			if i < len(nns)-1:
 				net = tflearn.layers.normalization.batch_normalization(net)
 				net = tflearn.activations.relu(net)
 			else:
